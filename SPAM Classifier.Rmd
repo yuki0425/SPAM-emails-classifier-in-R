@@ -1,0 +1,221 @@
+---
+title: "SPAM Email Classifier"
+author: "Yuki Liu"
+date: "November 30, 2014"
+output: html_document
+---
+
+
+\section{1. Scale the Data}
+The purpose for this section is to transform the NAs in the dataset the scale all the variables. One approach I am taking here is to calculate the mean and sd of the variable lengths in the spam dataset, then set the NA values to mean if isSpam. Use scale() to set the training data to the same range and treats all binary variables to numeric. Set TRUE = 1 and FALSE = 0.
+
+```{r}
+
+load("trainVariables.rda")
+
+# Calculate the mean value for emails
+tmp = sapply(1:length(trainVariables), function(x) {
+  mean(trainVariables[,x], na.rm = TRUE)})
+# Set NA to the mean value 
+for (i in 1:length(trainVariables)) {
+  trainVariables[is.na(trainVariables[[i]]), i] = tmp[i]
+}
+# Scale all the variables
+train = scale(trainVariables[, 1:length(trainVariables)-1])
+# Shuffle the data
+set.seed(141)
+tmp.index = sample(1:length(trainVariables[[1]]), length(trainVariables[[1]]))
+shuffle.train = train[tmp.index,]
+shuffle.tV = trainVariables[tmp.index, length(trainVariables)]
+```
+
+\section{2. K-neareast neighbor}
+\subsection{2.1 function to classify KNN}
+In the KNN function, **train** is the matrix of training data (without isSpam) and each row is a training sample. **test** is a matrix of test data from test emails. **tV** is a data.frame that contains indicators (factors) of whether the training sample is a spam. **k** is the counts/number of nearest neighbors and **d** is a matrix in which each cell is the distance of a test data to corresponding training data. 
+
+**Acknowledge:** I downloaded KKNN package and took a look of its source codes
+
+```{r}
+knn = function(train, test, tV, k, d) {
+  nearest = apply(d, 1, order)[1:k,]  #1 is row
+  # count the k nearest neighbors to decide whether the email is ham or spam
+  rtrain = dim(train)[1]
+  rtest = dim(test)[1]
+  tV = as.factor(tV)  # in case different length (so that we can use sapply later)
+  count = sapply(1:rtest, function(i) {
+    if (k==1) {
+      count = table(tV[nearest[i]])/k
+    } else count = table(tV[nearest[,i]])/k 
+    })
+
+colnames(count) = rownames(test)
+  # classify the max number of k
+  classify = sapply(1:rtest, function(j) {
+    name = names(which.max(count[,j]))
+    # if there is a tie, then randomly select a class (either ham or spam)
+    if(length(name) > 1) {
+      return(sample(name, 1))
+    } else return(name)
+  })
+names(classify) = rownames(test)
+return(list(classify = classify, probability = t(count)))
+}
+
+```
+
+\subsection{2.2 Cross Validation: 10 folds}
+Divided the shuffled training data into two parts. Use the first part which is 90% of the data as training data and the 10% left data as test data to determine the best k each time. 
+
+```{r}
+# Divide the data into 10 parts
+folds = rep(1:10, length.out = length(trainVariables[[1]]))
+
+# test different k with different method
+# choose k between 1 to 7 (KKNN package chose default to be 7 or less)
+d.k = seq(1,7,1)
+d.m = c("euclidean", "maximum", "manhattan", "canberra")
+
+```
+\subsection{2.3 Classification Tree}
+We use R build-in package rpart() in this part. 
+
+\section{3 Prediction Error}
+This function basically test how accurate our previous method will be. The function returns the error rate (accuracy rate) and the confusion matrix.
+
+```{r}
+rate = function(res, ind) {
+  # res is the TRUE or FALSE result come from 
+  # either KNN or classification tree
+  # ind is a df of indicators
+  res = as.logical(as.numeric(res))
+  ind = as.logical(ind)
+  error = sum(abs(res - ind))/length(res)
+  rate = 1- error
+  # Create a confusion matrix
+  n11 = sum(res == TRUE & ind == TRUE)
+  n12 = sum(res == FALSE & ind == TRUE)
+  n21 = sum(res == TRUE & ind == FALSE)
+  n22 = sum(res == FALSE & ind == FALSE)
+  confusion = matrix(c(n11, n21, n12, n22), nrow = 2)
+  rownames(confusion) = c("TRUE SPAM", "TRUE HAM")
+  colnames(confusion) = c("PREDICTED SPAM", "PREDICTED HAM")
+  return(list(error = error, rate = rate, confusion = confusion))
+}
+
+```
+
+\section{4. KNN and Classification Tree on trainVariables}
+calculate the accuracy rate on both 
+\subsection{4.1 KNN predictions and error rate}
+
+```{r}
+output = matrix(rep(0,28), nrow = 7)
+colnames(output) = d.m
+rownames(output) = seq(1,7,1)
+confusion = vector("list", 28)
+for (i in 1:4) {
+  d = as.matrix(dist(shuffle.train, method = d.m[i], 
+                     diag = FALSE, upper = FALSE))
+  for (k in 1:7) {
+    final = rep(0, length(trainVariables[[1]]))
+    for (j in 1:10) {
+       s.train = shuffle.train[folds!=j,]
+       s.test = shuffle.train[folds==j,]
+       s.tV = shuffle.tV[folds!=j]  # indicators for trainning data
+       s.tT= shuffle.tV[folds==j]  # indicators for test data
+       s.d = d[folds==j, folds!=j]
+       kn = knn(s.train, s.test, s.tV, k, s.d)
+       final[folds==j] = kn$classify
+    }
+    pr = rate(final, shuffle.tV)
+    output[k, i] = pr$rate
+    c= k*i
+    confusion[[c]] = pr$confusion
+  }
+} 
+output
+# It seems like while k = 1 under Mahattan distance method we achieve lowest error rate which means more accurate. 
+
+# Confusion matrix for Mahattan distance when k = 1
+confusion[[3]]
+```
+
+\subsection{4.2 Classification Tree Prediction and Error Rate}
+
+```{r} 
+library(rpart)
+trainVariables.ct = as.data.frame(train)
+trainVariables.ct$isSpam = trainVariables$isSpam
+ct = rpart(isSpam~. , method = "class", data = trainVariables.ct)
+predict.ct = as.character(predict(ct, trainVariables.ct ,type = "class"))
+output.c = rate(predict.ct, trainVariables.ct$isSpam)
+output.c$rate
+output.c$error
+output.c$confusion
+
+```
+
+It seems like KNN achieves higher accuracy here than Classification Tree.
+
+\section{5. TEST TWO DIFFERENT METHODS}
+\subsection{5.1 "testData.rda": including isSpam}
+
+First, lets exam the KNN methods
+
+```{r}
+setwd("/Users/Yuki_Liu/Documents/R")
+load("testData.rda")
+# Set NA to the mean value from the trainVariables
+for (i in 1:length(testVariables-1)) {
+  testVariables[is.na(testVariables[[i]]), i] = tmp[i]
+}
+r = testVariables[,30]
+test = testVariables[,1:29]
+test.scale = scale(testVariables[,1:length(testVariables)-1])
+
+# Combine test.scale and scaled training data to calculate distance
+all = rbind(test.scale, shuffle.train)
+d.t = dist(all, method = "manhattan", upper = TRUE, diag = TRUE)
+d.t = as.matrix(d.t) # return as 8541*8541 matrix
+# subset to get the relevant 2000*6541 sub-matrix 
+d.t = d.t[1:nrow(test), (nrow(test)+1):(nrow(test)+nrow(trainVariables))]
+kn.t = knn(shuffle.train, test.scale, shuffle.tV, 1, d.t)
+final.t = rate(kn.t$classify, r)
+final.t$rate
+final.t$confusion
+```
+
+Now we take a look at classification tree,
+
+```{r}
+trainVariables.ct = as.data.frame(shuffle.train)
+trainVariables.ct$isSpam = as.character(shuffle.tV)
+ct = rpart(isSpam~. , method = "class", data = trainVariables.ct)
+predict.ct = as.character(predict(ct, as.data.frame(test.scale) ,type = "class"))
+output.c = rate(predict.ct, r)
+output.c$rate
+output.c$error
+output.c$confusion
+```
+
+**Conclusion:** Based on all the analysis above, we see that KNN might be a better method to predict SPAM or HAM here. 
+
+\subsection{4.2 BLIND TEST!!}
+Here we choose KNN with K = 1 and mahattan distance to predict SPAM or HAM in the blind data set.
+
+```{r}
+load("blindTestData.rda")
+test.b = blindTestVariables
+test.scale.b = scale(blindTestVariables[,1:length(blindTestVariables)])
+
+# Combine test.scale and scaled training data to calculate distance
+all.b = rbind(test.scale.b, shuffle.train)
+d.b = dist(all.b, method = "manhattan", upper = TRUE, diag = TRUE)
+d.b = as.matrix(d.b) # return as 8541*8541 matrix
+# subset to get the relevant 808*6541 sub-matrix 
+d.b = d.b[1:nrow(test.b), (nrow(test.b)+1):(nrow(test.b)+nrow(trainVariables))]
+kn.b = knn(shuffle.train, test.scale.b, shuffle.tV, 1, d.b)
+predictions = kn.b$classify
+save(predictions, file = "predictBlindTest.rda")
+```
+
