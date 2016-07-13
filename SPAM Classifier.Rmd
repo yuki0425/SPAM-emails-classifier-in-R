@@ -6,7 +6,7 @@ output: html_document
 ---
 
 
-\section{1. Scale the Data}
+### 1 Scale the Data
 The purpose for this section is to transform the NAs in the dataset the scale all the variables. One approach I am taking here is to calculate the mean and sd of the variable lengths in the spam dataset, then set the NA values to mean if isSpam. Use scale() to set the training data to the same range and treats all binary variables to numeric. Set TRUE = 1 and FALSE = 0.
 
 ```{r}
@@ -29,8 +29,8 @@ shuffle.train = train[tmp.index,]
 shuffle.tV = trainVariables[tmp.index, length(trainVariables)]
 ```
 
-\section{2. K-neareast neighbor}
-\subsection{2.1 function to classify KNN}
+### 2 K-neareast neighbor
+#### 2.1 function to classify KNN
 In the KNN function, **train** is the matrix of training data (without isSpam) and each row is a training sample. **test** is a matrix of test data from test emails. **tV** is a data.frame that contains indicators (factors) of whether the training sample is a spam. **k** is the counts/number of nearest neighbors and **d** is a matrix in which each cell is the distance of a test data to corresponding training data. 
 
 **Acknowledge:** I downloaded KKNN package and took a look of its source codes
@@ -63,7 +63,7 @@ return(list(classify = classify, probability = t(count)))
 
 ```
 
-\subsection{2.2 Cross Validation: 10 folds}
+#### 2.2 Cross Validation: 10 folds
 Divided the shuffled training data into two parts. Use the first part which is 90% of the data as training data and the 10% left data as test data to determine the best k each time. 
 
 ```{r}
@@ -76,10 +76,10 @@ d.k = seq(1,7,1)
 d.m = c("euclidean", "maximum", "manhattan", "canberra")
 
 ```
-\subsection{2.3 Classification Tree}
+#### 2.3 Classification Tree
 We use R build-in package rpart() in this part. 
 
-\section{3 Prediction Error}
+### 3 Prediction Error
 This function basically test how accurate our previous method will be. The function returns the error rate (accuracy rate) and the confusion matrix.
 
 ```{r}
@@ -104,9 +104,9 @@ rate = function(res, ind) {
 
 ```
 
-\section{4. KNN and Classification Tree on trainVariables}
+### 4. KNN and Classification Tree on trainVariables
 calculate the accuracy rate on both 
-\subsection{4.1 KNN predictions and error rate}
+#### 4.1 KNN predictions and error rate
 
 ```{r}
 output = matrix(rep(0,28), nrow = 7)
@@ -140,7 +140,7 @@ output
 confusion[[3]]
 ```
 
-\subsection{4.2 Classification Tree Prediction and Error Rate}
+#### 4.2 Classification Tree Prediction and Error Rate
 
 ```{r} 
 library(rpart)
@@ -157,8 +157,8 @@ output.c$confusion
 
 It seems like KNN achieves higher accuracy here than Classification Tree.
 
-\section{5. TEST TWO DIFFERENT METHODS}
-\subsection{5.1 "testData.rda": including isSpam}
+### 5. TEST TWO DIFFERENT METHODS
+#### 5.1 "testData.rda": including isSpam
 
 First, lets exam the KNN methods
 
@@ -200,7 +200,7 @@ output.c$confusion
 
 **Conclusion:** Based on all the analysis above, we see that KNN might be a better method to predict SPAM or HAM here. 
 
-\subsection{4.2 BLIND TEST!!}
+#### 5.2 BLIND TEST!!
 Here we choose KNN with K = 1 and mahattan distance to predict SPAM or HAM in the blind data set.
 
 ```{r}
